@@ -759,6 +759,7 @@ func parseDialTarget(target string) (net string, addr string) {
 	return net, target
 }
 
+// https://github.com/grpc/proposal/blob/master/A14-channelz.md
 // channelzData is used to store channelz related data for ClientConn, addrConn and Server.
 // These fields cannot be embedded in the original structs (e.g. ClientConn), since to do atomic
 // operation on int64 variable on 32-bit machine, user is responsible to enforce memory alignment.

@@ -102,8 +102,8 @@ type Server struct {
 	channelzRemoveOnce sync.Once
 	serveWG            sync.WaitGroup // counts active Serve goroutines for GracefulStop
 
-	channelzID int64 // channelz unique identification number
-	czData     *channelzData
+	channelzID int64         // channelz unique identification number
+	czData     *channelzData // channelz 看起来是统计数据
 }
 
 type options struct {
@@ -343,13 +343,16 @@ func MaxHeaderListSize(s uint32) ServerOption {
 	}
 }
 
+// NewServer 是gRPC 服务的入口
 // NewServer creates a gRPC server which has no service registered and has not
 // started to accept requests yet.
 func NewServer(opt ...ServerOption) *Server {
+	// 这里可以参考：https://dave.cheney.net/2014/10/17/functional-options-for-friendly-apis
 	opts := defaultServerOptions
 	for _, o := range opt {
 		o(&opts)
 	}
+
 	s := &Server{
 		lis:    make(map[net.Listener]bool),
 		opts:   opts,
@@ -357,7 +360,7 @@ func NewServer(opt ...ServerOption) *Server {
 		m:      make(map[string]*service),
 		quit:   make(chan struct{}),
 		done:   make(chan struct{}),
-		czData: new(channelzData),
+		czData: new(channelzData), // 看起来channelz是用来统计数据的
 	}
 	s.cv = sync.NewCond(&s.mu)
 	if EnableTracing {
@@ -503,6 +506,7 @@ func (l *listenSocket) Close() error {
 	return err
 }
 
+// Serve 接受请求
 // Serve accepts incoming connections on the listener lis, creating a new
 // ServerTransport and service goroutine for each. The service goroutines
 // read gRPC requests and then call the registered handlers to reply to them.
@@ -595,17 +599,18 @@ func (s *Server) Serve(lis net.Listener) error {
 		// s.conns before this conn can be added.
 		s.serveWG.Add(1)
 		go func() {
-			s.handleRawConn(rawConn)
+			s.handleRawConn(rawConn) // handleRawConn 是真正处理请求的地方
 			s.serveWG.Done()
 		}()
 	}
 }
 
+// handleRawConn 是真正处理请求的地方
 // handleRawConn forks a goroutine to handle a just-accepted connection that
 // has not had any I/O performed on it yet.
 func (s *Server) handleRawConn(rawConn net.Conn) {
-	rawConn.SetDeadline(time.Now().Add(s.opts.connectionTimeout))
-	conn, authInfo, err := s.useTransportAuthenticator(rawConn)
+	rawConn.SetDeadline(time.Now().Add(s.opts.connectionTimeout)) // 设置连接超时时间
+	conn, authInfo, err := s.useTransportAuthenticator(rawConn)   // 握手
 	if err != nil {
 		s.mu.Lock()
 		s.errorf("ServerHandshake(%q) failed: %v", rawConn.RemoteAddr(), err)
@@ -628,6 +633,7 @@ func (s *Server) handleRawConn(rawConn net.Conn) {
 	s.mu.Unlock()
 
 	// Finish handshaking (HTTP2)
+	// 新建HTTP2连接
 	st := s.newHTTP2Transport(conn, authInfo)
 	if st == nil {
 		return
@@ -660,7 +666,7 @@ func (s *Server) newHTTP2Transport(c net.Conn, authInfo credentials.AuthInfo) tr
 		ChannelzParentID:      s.channelzID,
 		MaxHeaderListSize:     s.opts.maxHeaderListSize,
 	}
-	st, err := transport.NewServerTransport("http2", c, config)
+	st, err := transport.NewServerTransport("http2", c, config) // ServerTransport 是gRPC实现中，服务端的一个抽象。此处返回HTTP2服务器
 	if err != nil {
 		s.mu.Lock()
 		s.errorf("NewServerTransport(%q) failed: %v", c.RemoteAddr(), err)
@@ -673,6 +679,7 @@ func (s *Server) newHTTP2Transport(c net.Conn, authInfo credentials.AuthInfo) tr
 	return st
 }
 
+// 处理流，此处的stream对应HTTP2里的stream
 func (s *Server) serveStreams(st transport.ServerTransport) {
 	defer st.Close()
 	var wg sync.WaitGroup
@@ -1107,6 +1114,7 @@ func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transp
 	return t.WriteStatus(ss.s, status.New(codes.OK, ""))
 }
 
+// 处理stream
 func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Stream, trInfo *traceInfo) {
 	sm := stream.Method()
 	if sm != "" && sm[0] == '/' {
