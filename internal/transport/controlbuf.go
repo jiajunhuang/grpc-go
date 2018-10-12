@@ -225,6 +225,7 @@ func (l *outStreamList) dequeue() *outStream {
 	return b
 }
 
+// TODO: 不知道是个啥玩意儿。貌似所有的frame都在这。存在链表里。
 // controlBuffer is a way to pass information to loopy.
 // Information is passed as specific struct types called control frames.
 // A control frame not only represents data, messages or headers to be sent out
